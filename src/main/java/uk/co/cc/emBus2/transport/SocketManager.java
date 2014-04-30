@@ -23,11 +23,12 @@ public class SocketManager {
     private int LENGTH_FIELD = 8;
 
     private ConcurrentLinkedQueue<ProtocolMessage> outputQueue;
+    private ConcurrentLinkedQueue<ProtocolMessage> inputQueue;
 
     private Socket socket;
     private SocketReader reader;
     private SocketWriter writer;
-    
+
     private Thread writerThread;
     private Thread readerThread;
 
@@ -36,17 +37,18 @@ public class SocketManager {
     public String key;
     public String sessionKey;
     private EventThread dispatcher;
-    private ConcurrentLinkedQueue<ProtocolMessage> queue;
 
     public SocketManager(EventThread dispatcher, String sKek, String sSessionKey)
     {
         this.dispatcher = dispatcher;
-        this.queue = dispatcher.getCommunicationsQueue();
+
+        this.inputQueue = dispatcher.getCommunicationsQueue();
+        this.outputQueue = new ConcurrentLinkedQueue<ProtocolMessage>();
+
         this.proceed.set(true);
         this.connected.set(false);
         this.key = sKek;
         this.sessionKey = sSessionKey;
-        this.outputQueue = new ConcurrentLinkedQueue<ProtocolMessage>();
     }
 
     public void connected() {
@@ -132,7 +134,10 @@ public class SocketManager {
 
                                     ProtocolMessage msg = new ProtocolMessage(m_byteStreamIn, msgBuf, this.key, this.sessionKey);
 
-                                    this.queue.add(msg);
+                                    this.inputQueue.add(msg);
+                                    synchronized (this.inputQueue) {
+                                        this.inputQueue.notifyAll();
+                                    }
                                 }
                             }
                         }
@@ -185,9 +190,10 @@ public class SocketManager {
                         output.write(bytesOut);
 
                         output.flush();
-                        Thread.sleep(Constants.SO_SLEEP_DURATION);
-
                         count++;
+                    }
+                    synchronized (outputQueue) {
+                        outputQueue.wait();
                     }
                 }
                 catch (IOException e)
@@ -215,6 +221,9 @@ public class SocketManager {
         if (canProcess())
         {
             this.outputQueue.add(msg);
+            synchronized (outputQueue) {
+                outputQueue.notifyAll();
+            }
             rc = true;
         }
         return rc;
@@ -234,19 +243,25 @@ public class SocketManager {
         this.proceed.set(false);
 
         try {
-            this.writerThread.interrupt();
-            this.writerThread.join();
+            if(null != this.writerThread) {
+                this.writerThread.interrupt();
+                this.writerThread.join();
+            }
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
         try {
-            this.readerThread.interrupt();
-            this.readerThread.join();
+            if(null != this.readerThread) {
+                this.readerThread.interrupt();
+                this.readerThread.join();
+            }
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
         try {
-            this.socket.close();
+            if(null != this.socket) {
+                this.socket.close();
+            }
         } catch (IOException e) {
             e.printStackTrace(System.err);
         }
@@ -262,7 +277,7 @@ public class SocketManager {
 
         ProtocolMessage protocolMessage = new ProtocolMessage(message, this.key, this.sessionKey);
 
-        this.queue.add(protocolMessage);
+        this.inputQueue.add(protocolMessage);
     }
 
     public int getOutputQueueSize()
@@ -272,7 +287,7 @@ public class SocketManager {
 
     public int getInputQueueSize()
     {
-        return this.queue.size();
+        return this.inputQueue.size();
     }
 
     private int hexStringToInt(String sHexString)

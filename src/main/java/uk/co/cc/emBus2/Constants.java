@@ -8,7 +8,7 @@ package uk.co.cc.emBus2;
  * To change this template use File | Settings | File Templates.
  */
 public class Constants {
-    public static final String VERSION="1.0.1";
+    public static final String VERSION="1.0.2";
     
     public static final long SO_SLEEP_DURATION = 20l;
     public static final long EVENT_SLEEP_DURATION = 20l;

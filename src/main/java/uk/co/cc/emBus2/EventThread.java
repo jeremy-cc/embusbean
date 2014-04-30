@@ -35,6 +35,9 @@ public class EventThread implements Runnable {
             while ((this.proceed.get()))
             {
                 ProtocolMessage message;
+                synchronized(this.queue) {
+                    this.queue.wait();
+                }
                 // process in batches so that we respond more gracefully to shutdown requests
                 for(int count = 0; this.proceed.get() && (message = this.queue.poll()) != null && count < 10;) {
                     this.engine.messageHandler(message);
@@ -53,7 +56,9 @@ public class EventThread implements Runnable {
 
     public boolean incoming(ProtocolMessage message)
     {
-        return queue.add(message);
+        boolean res = queue.add(message);
+        queue.notifyAll();
+        return res;
     }
 
     public boolean hasStarted() {
