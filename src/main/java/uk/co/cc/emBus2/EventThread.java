@@ -36,18 +36,18 @@ public class EventThread implements Runnable {
             {
                 ProtocolMessage message;
                 synchronized(this.queue) {
-                    this.queue.wait();
+                    if(null == this.queue.poll()) {
+                        this.queue.wait(Constants.SO_SLEEP_DURATION);
+                    }
                 }
                 // process in batches so that we respond more gracefully to shutdown requests
-                for(int count = 0; this.proceed.get() && (message = this.queue.poll()) != null && count < 10;) {
+                for(;this.proceed.get() && (message = this.queue.poll()) != null;) {
                     this.engine.messageHandler(message);
-                    count++;
                 }
-                Thread.sleep(Constants.EVENT_SLEEP_DURATION);
             }
         }
         catch(InterruptedException ie) {
-
+            ie.printStackTrace(System.err);
         }
         catch (Exception e) {
             e.printStackTrace(System.err);

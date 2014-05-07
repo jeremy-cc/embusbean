@@ -276,7 +276,7 @@ public class EmbusInstance {
             ProtocolMessage msg = new ProtocolMessage(fields, this.key, this.sessionKey);
             return this.socketManager.enqueue(msg);
         } else {
-            System.out.println("Failed to publish message as not connected to server");
+            System.err.println("Failed to publish message as not connected to server");
             return false;
         }
     }
@@ -307,7 +307,7 @@ public class EmbusInstance {
             ProtocolMessage msg = new ProtocolMessage(fields, this.key, this.sessionKey);
             return this.socketManager.enqueue(msg);
         } else {
-            System.out.println("Failed to send message as not connected to server");
+            System.err.println("Failed to send message as not connected to server");
             return false;
         }
     }

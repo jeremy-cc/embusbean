@@ -3,7 +3,7 @@
     <groupId>CurrencyCloud</groupId>
     <name>embus 2.0</name>
     <artifactId>embus2</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.4</version>
 
     <properties>
         <project_gem_dir>tcc_embus</project_gem_dir>

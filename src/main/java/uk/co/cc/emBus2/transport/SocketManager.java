@@ -8,6 +8,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -95,50 +96,32 @@ public class SocketManager {
     {
         try
         {
-            byte[] m_byteStreamIn = null;
-            String m_strMsgLength = "";
-            int m_iLength = 0;
-            int m_iReadLen = 0;
-            int m_iReadOffset = 0;
-
+            int msg_length_data = 0;
             DataInputStream input = new DataInputStream(this.socket.getInputStream());
 
-            StringBuilder msgBuf;
             while (canProcess()) {
                 try
                 {
-                    if (m_strMsgLength.length() < this.LENGTH_FIELD && input.available() > 0)
-                    {
-                        int iByte = input.read();
-                        m_strMsgLength += (char)iByte;
-                    }
-                    else if ((m_iLength == 0) && (m_strMsgLength.length() == this.LENGTH_FIELD))
-                    {
-                        m_iLength = hexStringToInt(m_strMsgLength);
-                        m_byteStreamIn = new byte[m_iLength];
-                    }
-                    else
-                    {
-                        msgBuf = new StringBuilder();
-                        if(input.available() > 0) {
-                            int iLen = input.read(m_byteStreamIn, m_iReadOffset, m_iLength - m_iReadOffset);
-                            if (iLen > 0) {
-                                m_iReadLen += iLen;
-                                m_iReadOffset += iLen;
-                                if (m_iReadLen == m_iLength) {
-                                    m_strMsgLength = "";
-                                    m_iLength = 0;
-                                    m_iReadLen = 0;
-                                    m_iReadOffset = 0;
-                                    msgBuf.append(new String(m_byteStreamIn));
+                    int available = input.available();
 
-                                    ProtocolMessage msg = new ProtocolMessage(m_byteStreamIn, msgBuf, this.key, this.sessionKey);
+                    if(available > 0) {
+                        if(msg_length_data == 0) {
+                            if(available > this.LENGTH_FIELD) {// we have more bytes awaiting than the message length field
+                                byte[] lenBuffer = new byte[this.LENGTH_FIELD];
+                                input.read(lenBuffer);
+                                msg_length_data = hexStringToInt(new String(lenBuffer, Charset.forName("ISO-8859-1")));
+                            }
+                        } else { // dealing with a message
+                            byte [] msgData = new byte[msg_length_data];
+                            input.read(msgData); // block and wait for the rest of the message; pointless to read incrementally here.
+                            msg_length_data = 0; // reset
 
-                                    this.inputQueue.add(msg);
-                                    synchronized (this.inputQueue) {
-                                        this.inputQueue.notifyAll();
-                                    }
-                                }
+                            StringBuilder msgBuf = new StringBuilder(new String(msgData, Charset.forName("ISO-8859-1")));
+                            ProtocolMessage msg = new ProtocolMessage(msgData, msgBuf, this.key, this.sessionKey);
+
+                            this.inputQueue.add(msg);
+                            synchronized (this.inputQueue) {
+                                this.inputQueue.notifyAll();
                             }
                         }
                     }
@@ -175,7 +158,7 @@ public class SocketManager {
                 try
                 {
                     ProtocolMessage msg;
-                    for (int count = 0; canProcess() && (msg = outputQueue.poll()) != null && count < 10;)
+                    for (;canProcess() && (msg = outputQueue.poll()) != null;)
                     {
                         String strMsg = msg.toString();
 
@@ -190,10 +173,9 @@ public class SocketManager {
                         output.write(bytesOut);
 
                         output.flush();
-                        count++;
                     }
                     synchronized (outputQueue) {
-                        outputQueue.wait();
+                        outputQueue.wait(Constants.SO_SLEEP_DURATION);
                     }
                 }
                 catch (IOException e)
