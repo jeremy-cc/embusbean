@@ -104,7 +104,7 @@ public class SocketManager {
                 {
                     int available = input.available();
 
-                    if(available > 0) {
+//                    if(available > 0) {
                         if(msg_length_data == 0) {
                             if(available > this.LENGTH_FIELD) {// we have more bytes awaiting than the message length field
                                 byte[] lenBuffer = new byte[this.LENGTH_FIELD];
@@ -124,19 +124,19 @@ public class SocketManager {
                                 this.inputQueue.notifyAll();
                             }
                         }
-                    }
+//                    }
                 }
                 catch (IOException e)
                 {
                     sendError(Constants.err_connectiontimeout);
                 }
-                Thread.sleep(Constants.SO_SLEEP_DURATION);
+//                Thread.sleep(Constants.SO_SLEEP_DURATION);
             }
             input.close();
         }
-        catch(InterruptedException ie) {
-
-        }
+//        catch(InterruptedException ie) {
+//
+//        }
         catch (IOException e)
         {
             sendError(Constants.err_connectiontimeout);
@@ -163,10 +163,12 @@ public class SocketManager {
                         String strMsg = msg.toString();
 
                         iLength = strMsg.length();
-                        String strLength = toHex(iLength);
-                        while (strLength.length() < this.LENGTH_FIELD) {
-                            strLength = "0" + strLength;
-                        }
+                        String strLength = String.format("%"+this.LENGTH_FIELD +"s", toHex(iLength)).replace(' ', '0');
+//                        System.err.println(strLength);
+//                        System.err.println(String.format("%"+this.LENGTH_FIELD +"s", strLength).replace(' ', '0'));
+//                        while (strLength.length() < this.LENGTH_FIELD) {
+//                            strLength = "0" + strLength;
+//                        }
                         output.writeBytes(strLength);
 
                         byte[] bytesOut = msg.generateBytesFromMsg(strMsg, false);

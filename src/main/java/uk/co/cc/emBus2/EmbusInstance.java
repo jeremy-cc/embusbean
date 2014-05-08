@@ -135,10 +135,14 @@ public class EmbusInstance {
                     }
                 }
             }
+            System.out.print("Embus Interconnect version " + Constants.VERSION + " connecting...");
             if ((!this.isConnected()) && (result != 0)) {
                 disconnect();
+                System.out.print(String.format("failed, result = %d\n", result));
             }
-            System.out.println("Embus Interconnect version " + Constants.VERSION);
+            if(result == 0) {
+                System.out.print(String.format("success\n"));
+            }
         } catch (InterruptedException e) {
             e.printStackTrace(System.err);
         }
@@ -229,6 +233,8 @@ public class EmbusInstance {
             }
         }
         ErrorMessage errEvent = new ErrorMessage(this, iErr, strErrText);
+
+        System.err.println(String.format("protocol error: %d, message %s", iErr, strErrText));
 
         for (EventHandler handler : this.listeners) {
             handler.onError(errEvent);

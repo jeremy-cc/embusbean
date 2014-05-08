@@ -3,12 +3,19 @@
     <groupId>CurrencyCloud</groupId>
     <name>embus 2.0</name>
     <artifactId>embus2</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 
     <properties>
         <project_gem_dir>tcc_embus</project_gem_dir>
         <ruby_root>${user.home}/development/source/gems</ruby_root>
     </properties>
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.11</version>
+        </dependency>
+    </dependencies>
     <build>
         <outputDirectory>build</outputDirectory>
         <defaultGoal>clean package</defaultGoal>

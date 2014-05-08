@@ -14,7 +14,9 @@ public class Standalone {
         EventThread thread = new EventThread(instance);
         instance.setEventThread(thread);
 
-        instance.connect("fixmux", "password", "", "192.168.10.10:32615", "tcpip", 0, 2);
+        int result = instance.connect("fixmux", "password", "", "192.168.10.10:32615", "tcpip", 0, 2);
+
+        System.err.println(String.format("Result of connect call: %d", result));
 
         instance.subscribe("DEV.FIX.SEB.Prices", 0);
 //        instance.subscribe("PDT.FIX.SEB.PriceRequest", 0);
