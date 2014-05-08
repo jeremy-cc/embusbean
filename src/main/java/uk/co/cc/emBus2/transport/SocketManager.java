@@ -104,7 +104,7 @@ public class SocketManager {
                 {
                     int available = input.available();
 
-//                    if(available > 0) {
+                    if(available > 0) {
                         if(msg_length_data == 0) {
                             if(available > this.LENGTH_FIELD) {// we have more bytes awaiting than the message length field
                                 byte[] lenBuffer = new byte[this.LENGTH_FIELD];
@@ -124,19 +124,21 @@ public class SocketManager {
                                 this.inputQueue.notifyAll();
                             }
                         }
-//                    }
+                    } else {
+                        Thread.sleep(Constants.SO_SLEEP_DURATION);
+                    }
+
                 }
                 catch (IOException e)
                 {
                     sendError(Constants.err_connectiontimeout);
                 }
-//                Thread.sleep(Constants.SO_SLEEP_DURATION);
             }
             input.close();
         }
-//        catch(InterruptedException ie) {
-//
-//        }
+        catch(InterruptedException ie) {
+
+        }
         catch (IOException e)
         {
             sendError(Constants.err_connectiontimeout);
