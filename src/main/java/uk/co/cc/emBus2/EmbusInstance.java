@@ -22,10 +22,6 @@ public class EmbusInstance {
 
     private SocketManager socketManager;
 
-//    private EventThread eventThread;
-
-    private Thread eventThreadRunner;
-
     private String user = "";
     private String key;
     private String sessionKey = null;
@@ -143,13 +139,6 @@ public class EmbusInstance {
             this.setConnectionPending(false);
             this.setConnected(false);
             this.listeners.clear();
-
-            eventThreadRunner.interrupt();
-            try {
-                eventThreadRunner.join();
-            } catch (InterruptedException ie) {
-                ie.printStackTrace(System.err);
-            }
         }
         if (null != this.socketManager) {
             this.socketManager.shutdown();
