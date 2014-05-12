@@ -205,7 +205,7 @@ public class ProtocolMessage {
                             nextFieldIsBinary = false;
                         } else {
 //                            System.out.println(String.format("idx=%d, sep=%d, len=%d", idx, separatorPosition, strMsg.length()));
-                            if (separatorPosition < strMsg.length()) {
+                            if (separatorPosition > 0 && separatorPosition < strMsg.length()) {
                                 strField = strMsg.substring(idx, separatorPosition);
 //                                System.out.println(strField);
                                 if (separatorPosition < strMsg.length()) {

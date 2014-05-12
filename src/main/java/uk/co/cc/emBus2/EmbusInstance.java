@@ -22,7 +22,7 @@ public class EmbusInstance {
 
     private SocketManager socketManager;
 
-    private EventThread eventThread;
+//    private EventThread eventThread;
 
     private Thread eventThreadRunner;
 
@@ -36,10 +36,6 @@ public class EmbusInstance {
 
     public EmbusInstance() {
 
-    }
-
-    public void setEventThread(EventThread eventThread) {
-        this.eventThread = eventThread;
     }
 
     public int getOutputQueueSize() {
@@ -74,11 +70,6 @@ public class EmbusInstance {
         isDisconnecting.set(value);
     }
 
-    protected void start() {
-        eventThreadRunner = new Thread(this.eventThread);
-        eventThreadRunner.start();
-    }
-
     public void setKey(String strKey) {
         this.key = strKey;
     }
@@ -90,9 +81,6 @@ public class EmbusInstance {
     public int connect(String user, String password, String key, String address, String protocol, long options, long timeout) {
         int result = -1;
         try {
-            if (!this.eventThread.hasStarted()) {
-                start();
-            }
             this.protocol = protocol;
             int iColonPos = address.indexOf(':');
             if (address.indexOf(':') != -1) {
@@ -102,7 +90,7 @@ public class EmbusInstance {
             }
             setKey(key);
             if (!(this.isConnected() || this.isConnectionPending())) {
-                this.socketManager = new SocketManager(this.eventThread, key, sessionKey);
+                this.socketManager = new SocketManager(this, key, sessionKey);
                 if (!this.socketManager.connect(this.address, this.port)) {
                     protocolError(Constants.err_connectiontimeout, "");
                 } else {
@@ -156,8 +144,6 @@ public class EmbusInstance {
             this.setConnected(false);
             this.listeners.clear();
 
-            eventThread.stop();
-
             eventThreadRunner.interrupt();
             try {
                 eventThreadRunner.join();
@@ -190,7 +176,9 @@ public class EmbusInstance {
         try {
             Map<String, String> messageMap = msg.toMap();
             String strMsgType = messageMap.get("d");
-            if (strMsgType.equals("p")) {
+            if(null == strMsgType) {
+                System.err.println(String.format("Potential parsing issue: %s", msg));
+            } else if (strMsgType.equals("p")) {
                 if (messageMap.get("5") == null) {
                     this.setConnectionPending(false);
                     this.setConnected(true);

@@ -1,11 +1,12 @@
 package uk.co.cc.emBus2.transport;
 
 import uk.co.cc.emBus2.Constants;
-import uk.co.cc.emBus2.EventThread;
+import uk.co.cc.emBus2.EmbusInstance;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
@@ -24,26 +25,27 @@ public class SocketManager {
     private int LENGTH_FIELD = 8;
 
     private ConcurrentLinkedQueue<ProtocolMessage> outputQueue;
-    private ConcurrentLinkedQueue<ProtocolMessage> inputQueue;
+    private ConcurrentLinkedQueue<ProtocolMessage> inputQueue = new ConcurrentLinkedQueue<ProtocolMessage>();
 
     private Socket socket;
     private SocketReader reader;
     private SocketWriter writer;
+    private MessagePusher processor;
 
     private Thread writerThread;
     private Thread readerThread;
+    private Thread processorThread;
 
     String PING_MESSAGE = "d\037g\n";
 
     public String key;
     public String sessionKey;
-    private EventThread dispatcher;
+    private EmbusInstance dispatcher;
 
-    public SocketManager(EventThread dispatcher, String sKek, String sSessionKey)
+    public SocketManager(EmbusInstance dispatcher, String sKek, String sSessionKey)
     {
         this.dispatcher = dispatcher;
 
-        this.inputQueue = dispatcher.getCommunicationsQueue();
         this.outputQueue = new ConcurrentLinkedQueue<ProtocolMessage>();
 
         this.proceed.set(true);
@@ -60,15 +62,23 @@ public class SocketManager {
     public boolean connect(String address, int port)
     {
         boolean result = false;
+
         try
         {
             this.socket = new Socket(address, port);
+
+            this.connected.set(true);
+
             this.reader = new SocketReader();
             this.writer = new SocketWriter();
+            this.processor = new MessagePusher();
 
             readerThread = new Thread(reader);
             readerThread.start();
-            
+
+            processorThread = new Thread(processor);
+            processorThread.start();
+
             writerThread = new Thread(writer);
             writerThread.start();
 
@@ -87,7 +97,6 @@ public class SocketManager {
         {
             e.printStackTrace(System.err);
         }
-        this.connected.set(result);
         this.connectionPending.set(result);
         return result;
     }
@@ -97,7 +106,10 @@ public class SocketManager {
         try
         {
             int msg_length_data = 0;
-            DataInputStream input = new DataInputStream(this.socket.getInputStream());
+            InputStream input = getSocketInputStream();
+
+            int counter = 0;
+            char [] log = new char[200];
 
             while (canProcess()) {
                 try
@@ -109,28 +121,39 @@ public class SocketManager {
                             if(available > this.LENGTH_FIELD) {// we have more bytes awaiting than the message length field
                                 byte[] lenBuffer = new byte[this.LENGTH_FIELD];
                                 input.read(lenBuffer);
-                                msg_length_data = hexStringToInt(new String(lenBuffer, Charset.forName("ISO-8859-1")));
+                                msg_length_data = hexStringToInt(latinise(lenBuffer));
+                                System.out.println(msg_length_data);
                             }
                         } else { // dealing with a message
                             byte [] msgData = new byte[msg_length_data];
                             input.read(msgData); // block and wait for the rest of the message; pointless to read incrementally here.
                             msg_length_data = 0; // reset
 
-                            StringBuilder msgBuf = new StringBuilder(new String(msgData, Charset.forName("ISO-8859-1")));
+                            StringBuilder msgBuf = new StringBuilder(latinise(msgData));
+                            System.out.println("read " + msgBuf.toString());
                             ProtocolMessage msg = new ProtocolMessage(msgData, msgBuf, this.key, this.sessionKey);
 
+                            log[counter] = '|';
+                            counter++;
                             this.inputQueue.add(msg);
                             synchronized (this.inputQueue) {
                                 this.inputQueue.notifyAll();
                             }
                         }
                     } else {
+                        log[counter] = '.';
+                        counter++;
                         Thread.sleep(Constants.SO_SLEEP_DURATION);
                     }
-
+                    if(counter % 200 == 0) {
+                        System.out.println(log);
+                        log = new char[200];
+                        counter = 0;
+                    }
                 }
                 catch (IOException e)
                 {
+                    e.printStackTrace(System.err);
                     sendError(Constants.err_connectiontimeout);
                 }
             }
@@ -141,13 +164,167 @@ public class SocketManager {
         }
         catch (IOException e)
         {
+            e.printStackTrace(System.err);
             sendError(Constants.err_connectiontimeout);
         }
         catch (Exception e)
         {
+            e.printStackTrace(System.err);
             sendError(Constants.err_connectiontimeout);
         }
     }
+
+    InputStream getSocketInputStream() throws IOException {
+        return new DataInputStream(this.socket.getInputStream());
+    }
+
+    private String latinise(byte[] data) {
+        return new String(data, Charset.forName(Constants.CHARSET));
+    }
+
+    // attempt to pull multiple messages off the socket at the same time.
+    public void readBuffered() {
+        try {
+
+            int chunk_length = 0;
+            InputStream input = getSocketInputStream();
+
+            byte [] buffer = null;
+
+            byte [] remainder = null;
+            byte [] currentHeader = null;
+
+            while (canProcess())
+            {
+                try {
+                    int available = input.available();
+                    if(available > 0) {
+                        int offset = (remainder == null ? 0 : remainder.length);
+                        buffer = new byte[available + offset];
+
+                        if (null != remainder) {
+                            System.arraycopy(remainder, 0, buffer, 0, remainder.length);
+                            remainder = null;
+
+                        }
+                        // ensure we start at the offset position as required.
+                        input.read(buffer, offset, available);
+
+                        // chunk the buffer
+                        for(int idx = 0; idx < buffer.length;) {
+
+                            // read the header of a chunk
+                            if (chunk_length == 0) {
+                                if((buffer.length - idx)>=this.LENGTH_FIELD) {
+                                    currentHeader = new byte[this.LENGTH_FIELD];
+                                    System.arraycopy(buffer, idx, currentHeader, 0, this.LENGTH_FIELD);
+                                    idx += this.LENGTH_FIELD;
+
+                                    //                                log("chunk length block is %s", latinise(currentHeader));
+                                    try {
+                                        chunk_length = hexStringToInt(latinise(currentHeader));
+                                    } catch (NumberFormatException nfe) {
+                                        nfe.printStackTrace(System.err);
+                                        throw nfe;
+                                    }
+                                }
+                                else {
+                                    // we discovered insufficient bytes left to get the length field.
+                                    int len = buffer.length - idx; // create enough space to push the read bytes back.
+                                    remainder = new byte[len];
+                                    // push the header back into the buffer
+                                    System.arraycopy(buffer, idx, remainder, 0, len);
+                                    break;
+                                }
+                            }
+
+                            // if we're dealing with the body of the message:
+                            if (chunk_length > 0) {
+                                // if there is enough space in the buffer to read the rest of this chunk completely
+                                if (buffer.length - idx >= chunk_length) {
+                                    byte[] data = new byte[chunk_length];
+                                    System.arraycopy(buffer, idx, data, 0, chunk_length);
+                                    idx += chunk_length;
+
+                                    StringBuilder built = new StringBuilder(latinise(data));
+                                    this.inputQueue.add(new ProtocolMessage(data, built, this.key, this.sessionKey));
+
+                                    currentHeader = null;
+                                    chunk_length = 0; // reset
+
+                                } else {
+                                    // we discovered insufficient bytes to fully read the message.
+                                    // not enough left, we need to wait for additional input.
+                                    remainder = new byte[buffer.length - idx + 8];
+
+                                    // push the header back into the buffer
+                                    System.arraycopy(currentHeader, 0, remainder, 0, currentHeader.length);
+                                    System.arraycopy(buffer, idx, remainder, currentHeader.length, remainder.length - currentHeader.length ); // copy the remaining unconsumed buffer to the remainder
+
+                                    currentHeader = null;
+                                    chunk_length = 0; // reset
+
+                                    break; // break
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+
+                        synchronized (this.inputQueue) {
+                            if(this.inputQueue.size() > 0) {
+                                inputQueue.notifyAll();
+                            }
+                        }
+                    } else {
+                        Thread.sleep(Constants.SO_SLEEP_DURATION);
+                    }
+
+
+                } catch(IOException ioe) {
+                    ioe.printStackTrace(System.err);
+                    sendError(Constants.err_connectiontimeout);
+                }
+            }
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace(System.err);
+            sendError(Constants.err_connectiontimeout);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace(System.err);
+            sendError(Constants.err_connectiontimeout);
+        }
+    }
+
+    public void handleRead() {
+        try {
+            while(canProcess()) {
+
+                ProtocolMessage msg = null;
+
+                for(msg = inputQueue.poll(); msg != null;) {
+                    this.dispatcher.messageHandler(msg);
+                    msg = inputQueue.poll();
+                }
+                try {
+                    synchronized(inputQueue) {
+                        inputQueue.wait(Constants.SO_SLEEP_DURATION);
+                    }
+                } catch(InterruptedException ie) {
+                    ie.printStackTrace(System.err);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace(System.err);
+            sendError(Constants.err_connectiontimeout);
+        }
+    }
+
 
     public void write()
     {
@@ -184,6 +361,7 @@ public class SocketManager {
                 }
                 catch (IOException e)
                 {
+                    e.printStackTrace(System.err);
                     sendError(Constants.err_connectiontimeout);
                 }
             }
@@ -193,10 +371,12 @@ public class SocketManager {
         }
         catch (IOException e)
         {
+            e.printStackTrace(System.err);
             sendError(Constants.err_connectiontimeout);
         }
         catch (Exception e)
         {
+            e.printStackTrace(System.err);
             sendError(Constants.err_connectiontimeout);
         }
     }
@@ -215,7 +395,7 @@ public class SocketManager {
         return rc;
     }
 
-    private boolean canProcess() {
+    boolean canProcess() {
         return (this.connected.get() && this.proceed.get());
     }
 
@@ -228,27 +408,18 @@ public class SocketManager {
         this.connected.set(false);
         this.proceed.set(false);
 
+        terminate(writerThread);
+        terminate(readerThread);
+        terminate(processorThread);
+    }
+
+    private void terminate(Thread t) {
         try {
-            if(null != this.writerThread) {
-                this.writerThread.interrupt();
-                this.writerThread.join();
+            if(null != t) {
+                t.interrupt();
+                t.join();
             }
         } catch (Exception e) {
-            e.printStackTrace(System.err);
-        }
-        try {
-            if(null != this.readerThread) {
-                this.readerThread.interrupt();
-                this.readerThread.join();
-            }
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
-        }
-        try {
-            if(null != this.socket) {
-                this.socket.close();
-            }
-        } catch (IOException e) {
             e.printStackTrace(System.err);
         }
     }
@@ -264,6 +435,10 @@ public class SocketManager {
         ProtocolMessage protocolMessage = new ProtocolMessage(message, this.key, this.sessionKey);
 
         this.inputQueue.add(protocolMessage);
+        synchronized(this.inputQueue) {
+            inputQueue.notifyAll();
+        }
+
     }
 
     public int getOutputQueueSize()
@@ -290,9 +465,17 @@ public class SocketManager {
     {
         public void run()
         {
-            SocketManager.this.read();
+            SocketManager.this.readBuffered();
         }
     }
+
+    class MessagePusher implements Runnable
+    {
+        public void run() {
+            SocketManager.this.handleRead();
+        }
+    }
+
 
     class SocketWriter implements Runnable
     {
