@@ -3,10 +3,7 @@ package uk.co.cc.emBus2.transport;
 import uk.co.cc.emBus2.Constants;
 import uk.co.cc.emBus2.EmbusInstance;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
@@ -15,6 +12,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static uk.co.cc.emBus2.util.Logger.log_info;
+
 /**
  * Created by jeremyb on 22/04/2014.
  */
@@ -22,7 +21,7 @@ public class SocketManager {
     private AtomicBoolean proceed = new AtomicBoolean(false);
     private AtomicBoolean connected = new AtomicBoolean(false);
     public AtomicBoolean connectionPending = new AtomicBoolean(false);
-    private int LENGTH_FIELD = 8;
+//    private int LENGTH_FIELD = 8;
 
     private ConcurrentLinkedQueue<ProtocolMessage> outputQueue;
     private ConcurrentLinkedQueue<ProtocolMessage> inputQueue = new ConcurrentLinkedQueue<ProtocolMessage>();
@@ -118,8 +117,8 @@ public class SocketManager {
 
                     if(available > 0) {
                         if(msg_length_data == 0) {
-                            if(available > this.LENGTH_FIELD) {// we have more bytes awaiting than the message length field
-                                byte[] lenBuffer = new byte[this.LENGTH_FIELD];
+                            if(available > ProtocolMessage.HEADER_LENGTH) {// we have more bytes awaiting than the message length field
+                                byte[] lenBuffer = new byte[ProtocolMessage.HEADER_LENGTH];
                                 input.read(lenBuffer);
                                 msg_length_data = hexStringToInt(latinise(lenBuffer));
                                 System.out.println(msg_length_data);
@@ -130,11 +129,10 @@ public class SocketManager {
                             msg_length_data = 0; // reset
 
                             StringBuilder msgBuf = new StringBuilder(latinise(msgData));
-                            System.out.println("read " + msgBuf.toString());
                             ProtocolMessage msg = new ProtocolMessage(msgData, msgBuf, this.key, this.sessionKey);
-
-                            log[counter] = '|';
-                            counter++;
+//
+//                            log[counter] = '|';
+//                            counter++;
                             this.inputQueue.add(msg);
                             synchronized (this.inputQueue) {
                                 this.inputQueue.notifyAll();
@@ -215,10 +213,10 @@ public class SocketManager {
 
                             // read the header of a chunk
                             if (chunk_length == 0) {
-                                if((buffer.length - idx)>=this.LENGTH_FIELD) {
-                                    currentHeader = new byte[this.LENGTH_FIELD];
-                                    System.arraycopy(buffer, idx, currentHeader, 0, this.LENGTH_FIELD);
-                                    idx += this.LENGTH_FIELD;
+                                if((buffer.length - idx)>=ProtocolMessage.HEADER_LENGTH) {
+                                    currentHeader = new byte[ProtocolMessage.HEADER_LENGTH];
+                                    System.arraycopy(buffer, idx, currentHeader, 0, ProtocolMessage.HEADER_LENGTH);
+                                    idx += ProtocolMessage.HEADER_LENGTH;
 
                                     //                                log("chunk length block is %s", latinise(currentHeader));
                                     try {
@@ -339,20 +337,10 @@ public class SocketManager {
                     ProtocolMessage msg;
                     for (;canProcess() && (msg = outputQueue.poll()) != null;)
                     {
-                        String strMsg = msg.toString();
 
-                        iLength = strMsg.length();
-                        String strLength = String.format("%"+this.LENGTH_FIELD +"s", toHex(iLength)).replace(' ', '0');
-//                        System.err.println(strLength);
-//                        System.err.println(String.format("%"+this.LENGTH_FIELD +"s", strLength).replace(' ', '0'));
-//                        while (strLength.length() < this.LENGTH_FIELD) {
-//                            strLength = "0" + strLength;
-//                        }
-                        output.writeBytes(strLength);
-
-                        byte[] bytesOut = msg.generateBytesFromMsg(strMsg, false);
+                        byte [] bytesOut = packageForDispatch(msg);
+                        log_info("Writing %s bytes to outputstream for request %s", bytesOut.length, msg.toString());
                         output.write(bytesOut);
-
                         output.flush();
                     }
                     synchronized (outputQueue) {
@@ -379,6 +367,17 @@ public class SocketManager {
             e.printStackTrace(System.err);
             sendError(Constants.err_connectiontimeout);
         }
+    }
+
+    public byte[] packageForDispatch(ProtocolMessage msg) throws UnsupportedEncodingException {
+
+        byte [] encodedMessage = msg.generateBytesFromMsg(msg.toString(), false);
+        byte [] buffer = new byte[ProtocolMessage.HEADER_LENGTH + encodedMessage.length];
+
+        System.arraycopy(msg.messageLengthAsHex().getBytes(), 0, buffer, 0,  ProtocolMessage.HEADER_LENGTH);
+        System.arraycopy(encodedMessage, 0, buffer, ProtocolMessage.HEADER_LENGTH, encodedMessage.length);
+
+        return buffer;
     }
 
     public boolean enqueue(ProtocolMessage msg)

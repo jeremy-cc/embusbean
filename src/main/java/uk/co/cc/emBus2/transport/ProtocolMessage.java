@@ -2,9 +2,13 @@ package uk.co.cc.emBus2.transport;
 
 import java.util.*;
 
+import static uk.co.cc.emBus2.util.Util.toHex;
+
 public class ProtocolMessage {
     public static final char CH36 = '\036'; // separator for 'b' messages
     public static final char CH37 = '\037'; // separator for 'a' messages
+
+    public static final int HEADER_LENGTH = 8;
 
     public boolean m_bAck = false;
     public boolean m_bNak = false;
@@ -142,6 +146,18 @@ public class ProtocolMessage {
         return this.messageBuffer.toString();
     }
 
+    public int payloadLength() {
+        return this.messageBuffer.length();
+    }
+
+    public int overallMessageLength() {
+        return payloadLength() + HEADER_LENGTH;
+    }
+
+    public String messageLengthAsHex() {
+        return String.format("%"+this.HEADER_LENGTH +"s", toHex(payloadLength())).replace(' ', '0');
+    }
+
     public Map<String, String> _toMap() {
         Map<String, String> map = new HashMap<String, String>();
         String strKey = null;
@@ -198,7 +214,7 @@ public class ProtocolMessage {
 
                             strField = strMsg.substring(0, messageLength);
                             if (idx < (strMsg.length() - (separatorPosition + 2))) {
-                                idx += (messageLength + 1); // strMsg = strMsg.substring(messageLength + 1);
+                                idx += (messageLength + 1); // strMsg = strMsg.substring(payloadLength + 1);
                             } else {
                                 idx = strMsg.length();
                             }

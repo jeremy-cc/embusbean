@@ -12,7 +12,7 @@ public class Standalone {
     public static void main(String [] args) {
         EmbusInstance instance = new EmbusInstance();
 
-        int result = instance.connect("fixmux", "password", "", "192.168.10.10:32615", "tcpip", 0, 2);
+        int result = instance.connect("fixmux", "password", "", "192.168.10.10:32615", "tcpip", 1, 2);
 
         System.err.println(String.format("Result of connect call: %d", result));
 

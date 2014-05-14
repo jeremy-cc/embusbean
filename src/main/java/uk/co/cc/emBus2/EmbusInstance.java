@@ -9,6 +9,9 @@ import uk.co.cc.emBus2.transport.SocketManager;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static uk.co.cc.emBus2.util.Logger.log_error;
+import static uk.co.cc.emBus2.util.Logger.log_info;
+
 /**
  * Created by jeremyb on 22/04/2014.
  */
@@ -20,11 +23,15 @@ public class EmbusInstance {
     private AtomicBoolean connectionPending = new AtomicBoolean(false);
     private AtomicBoolean isDisconnecting = new AtomicBoolean(false);
 
+    private int FLAG_LOG = 0x01;
+
     private SocketManager socketManager;
 
     private String user = "";
     private String key;
     private String sessionKey = null;
+
+    private static boolean logging_enabled = false;
 
     private Map errorTable = new HashMap();
 
@@ -33,6 +40,17 @@ public class EmbusInstance {
     public EmbusInstance() {
 
     }
+
+    private void setOptions(long options) {
+        if((options & FLAG_LOG) == 0x01) {
+            logging_enabled = true;
+        }
+    }
+
+    public static boolean isLoggingEnabled(){
+        return logging_enabled;
+    }
+
 
     public int getOutputQueueSize() {
         return this.socketManager.getOutputQueueSize();
@@ -76,6 +94,9 @@ public class EmbusInstance {
 
     public int connect(String user, String password, String key, String address, String protocol, long options, long timeout) {
         int result = -1;
+
+        setOptions(options);
+
         try {
             this.protocol = protocol;
             int iColonPos = address.indexOf(':');
@@ -119,13 +140,13 @@ public class EmbusInstance {
                     }
                 }
             }
-            System.out.print("Embus Interconnect version " + Constants.VERSION + " connecting...");
+            log_info("connecting...");
             if ((!this.isConnected()) && (result != 0)) {
                 disconnect();
-                System.out.print(String.format("failed, result = %d\n", result));
+                log_error("failed, result = %d", result);
             }
             if(result == 0) {
-                System.out.print(String.format("success\n"));
+                log_info("success");
             }
         } catch (InterruptedException e) {
             e.printStackTrace(System.err);
@@ -166,7 +187,7 @@ public class EmbusInstance {
             Map<String, String> messageMap = msg.toMap();
             String strMsgType = messageMap.get("d");
             if(null == strMsgType) {
-                System.err.println(String.format("Potential parsing issue: %s", msg));
+                log_error("Potential parsing issue: %s", msg);
             } else if (strMsgType.equals("p")) {
                 if (messageMap.get("5") == null) {
                     this.setConnectionPending(false);
@@ -211,7 +232,7 @@ public class EmbusInstance {
         }
         ErrorMessage errEvent = new ErrorMessage(this, iErr, strErrText);
 
-        System.err.println(String.format("protocol error: %d, message %s", iErr, strErrText));
+        log_error("protocol error: %d, message %s", iErr, strErrText);
 
         for (EventHandler handler : this.listeners) {
             handler.onError(errEvent);
@@ -259,7 +280,7 @@ public class EmbusInstance {
             ProtocolMessage msg = new ProtocolMessage(fields, this.key, this.sessionKey);
             return this.socketManager.enqueue(msg);
         } else {
-            System.err.println("Failed to publish message as not connected to server");
+            log_error("Failed to publish message as not connected to server");
             return false;
         }
     }
@@ -290,7 +311,7 @@ public class EmbusInstance {
             ProtocolMessage msg = new ProtocolMessage(fields, this.key, this.sessionKey);
             return this.socketManager.enqueue(msg);
         } else {
-            System.err.println("Failed to send message as not connected to server");
+            log_error("Failed to send message as not connected to server");
             return false;
         }
     }
